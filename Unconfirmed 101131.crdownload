@@ -1,0 +1,69 @@
+import streamlit as st
+from PIL import Image
+from streamlit.components.v1 import html
+# file_path = "result.txt"
+
+
+def read_file(file_path):
+    with open(file_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+    return content
+
+
+def display_report(content):
+    # Define the CSS styles
+    css = """
+        body {
+            font-family: Arial, sans-serif;
+        }
+        h1 {
+            color: #006699;
+            font-size: 32px;
+            font-weight: bold;
+            text-align: center;
+            margin-top: 20px;
+            margin-bottom: 30px;
+        }
+        hr {
+            border: 1px solid #ddd;
+            margin-bottom: 30px;
+        }
+        .pre {
+            white-space: pre-wrap;
+            font-size: 18px;
+            margin-bottom: 30px;
+        }
+        img {
+            display: block;
+            margin: 0 auto;
+            max-width: 100%;
+            height: auto;
+        }
+    """
+
+    # Render the report template
+    report_template = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>Health Report</title>
+            <style>
+                {css}
+            </style>
+        </head>
+        <body>
+            <h1>Health Report</h1>
+            <hr>
+            <div class="pre">{content}</div>
+        </body>
+        </html>
+    """
+    st.components.v1.html(report_template, height=800)
+
+
+def main():
+    file_path = "C:\\Anuj Documents\\FY Project\\Depression Detection\\result.txt"
+    content = read_file(file_path)
+    display_report(content)
+

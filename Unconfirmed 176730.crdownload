@@ -1,0 +1,30 @@
+model = []
+
+        @staticmethod
+        def train():
+            from sklearn.ensemble import RandomForestRegressor
+            from sklearn.model_selection import train_test_split
+            # from sklearn import metrics
+
+            x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3, random_state=109)
+            model = RandomForestRegressor()
+            model.fit(x_train, y_train)
+            random_forest.model = model
+            # Due to a bitch-ass error, accuracy for random forest is unavailable
+            # print("Random forest accuracy:", metrics.accuracy_score(y_test, y_pred))
+            return
+
+        @staticmethod
+        def predict(arglist):
+            model = random_forest.model
+            if (model == []):
+                print("Train random forest")
+                return
+            x_pred = arglist
+            y_pred = model.predict(x_pred)[0]
+            y_pred_rounded = round(y_pred)
+            print("Random forest:", y_pred)
+            print("Random forest rounded:", y_pred_rounded)
+            return (y_pred_rounded, y_pred)
+
+    random_forest.train()

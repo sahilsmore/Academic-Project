@@ -1,0 +1,41 @@
+import streamlit as st
+from auth.authController import create_usertable, add_userdata, make_hashes, check_hashes, login_user
+from dashboard import app
+
+# st.write(st.session_state)
+
+if "loggedin" in st.session_state:
+    # st.success("Logged in")
+    app()
+else:
+    tab1, tab2 = st.tabs(["Login", "Signup"])
+    with tab1:
+        st.header("Login")
+        st.subheader("Please enter user name and password")
+        user = st.text_input('Enter username')
+        passwd = st.text_input('Enter password', type='password')
+
+        if st.button('Login'):
+            create_usertable()
+            hashed_pswd = make_hashes(passwd)
+            result = login_user(user,check_hashes(passwd,hashed_pswd))
+            if result:
+                st.session_state['loggedin'] = True
+                st.session_state['user'] = user
+                st.success("Logged in")
+                st.experimental_rerun()
+                
+            else:
+                st.error("Failed to login")
+
+    with tab2:
+        st.header("Signup")
+        st.subheader("Create an Account")
+        new_user = st.text_input('Username')
+        new_passwd = st.text_input('Password', type='password')
+        new_user_name = st.text_input('Full Name')
+
+        if st.button('SignUp'):
+            create_usertable()
+            add_userdata(new_user, make_hashes(new_passwd), new_user_name)
+            st.success("You have successfully created an account.Go to the Login Menu to login")

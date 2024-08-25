@@ -1,0 +1,295 @@
+import pandas as pd
+import numpy as np
+from sklearn import preprocessing
+import warnings
+import streamlit as st
+from PIL import Image
+from streamlit_option_menu import option_menu
+from pathlib import Path
+from utils.predictor import predict
+from utils.ttsdownloader import download_file
+from utils.videotts import app_sst_with_video
+from utils.emotionpredictor import startEmotionDetector
+from time import gmtime, strftime
+from send_email import send_email
+import report
+
+
+def app():
+    # global variables
+    HERE = Path(__file__).parent
+    MODEL_URL = "https://github.com/mozilla/DeepSpeech/releases/download/v0.9.3/deepspeech-0.9.3-models.pbmm"  # noqa
+    LANG_MODEL_URL = "https://github.com/mozilla/DeepSpeech/releases/download/v0.9.3/deepspeech-0.9.3-models.scorer"  # noqa
+    MODEL_LOCAL_PATH = HERE / "models/deepspeech-0.9.3-models.pbmm"
+    LANG_MODEL_LOCAL_PATH = HERE / "models/deepspeech-0.9.3-models.scorer"
+
+    lm_alpha = 0.931289039105002
+    lm_beta = 1.1834137581510284
+    beam = 100
+
+    warnings.filterwarnings("ignore", category=UserWarning)
+
+    df = pd.read_csv("data.csv")
+    df.drop(['AGERNG', 'GENDER', 'EDU', 'PROF', 'MARSTS', 'RESDPL', 'LIVWTH', 'DEBT', 'PHYEX', 'SMOKE', 'DRINK',
+             'ILLNESS', 'PREMED', 'EATDIS', 'AVGSLP', 'TSSN', 'WRKPRE'], axis=1, inplace=True)
+
+    categ = ['ENVSAT', 'POSSAT', 'FINSTR', 'INSOM', 'ANXI',
+             'DEPRI', 'ABUSED', 'CHEAT', 'THREAT', 'SUICIDE',
+             'INFER', 'CONFLICT', 'LOST', 'DEPRESSED']
+
+    le = preprocessing.LabelEncoder()
+    # Encode Categorical Columns
+    df[categ] = df[categ].apply(le.fit_transform)
+    x = df.drop('DEPRESSED', axis=1)
+    y = df['DEPRESSED']
+
+    config = open("config.txt", "r")
+    load_dnn_flag = config.readline().split()[2]
+    load_dnn_flag = load_dnn_flag.lower() in "true"
+    config.close()
+
+    def saveRecord(text, pos):
+        now = strftime("%Y-%m-%d %H:%M:%S", gmtime())
+        # pred(text)
+        with open('text.txt', 'r+') as file:
+            file_data = file.readlines()
+            print(file_data)
+            file_data.append(f"{text} - {now} (User : {st.session_state['user'] or ''})\n")
+            with open('text.txt', 'w') as f:
+                f.writelines(file_data)
+                f.close()
+            file.close()
+
+    def saveResult(text, pos):
+        # pred(text)
+        with open('result.txt', 'r+') as file:
+            file_data = file.readlines()
+            print(file_data)
+            file_data.append(f"{text} \n")
+            with open('result.txt', 'w') as f:
+                f.writelines(file_data)
+                f.close()
+            file.close()
+
+    class random_forest:
+
+        model = []
+
+        @staticmethod
+        def train():
+            from sklearn.ensemble import RandomForestRegressor
+            from sklearn.model_selection import train_test_split
+            # from sklearn import metrics
+
+            x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.3, random_state=109)
+            model = RandomForestRegressor()
+            model.fit(x_train, y_train)
+            random_forest.model = model
+            # Due to a bitch-ass error, accuracy for random forest is unavailable
+            # print("Random forest accuracy:", metrics.accuracy_score(y_test, y_pred))
+            return
+
+        @staticmethod
+        def predict(arglist):
+            model = random_forest.model
+            if (model == []):
+                print("Train random forest")
+                return
+            x_pred = arglist
+            y_pred = model.predict(x_pred)[0]
+            y_pred_rounded = round(y_pred)
+            print("Random forest:", y_pred)
+            print("Random forest rounded:", y_pred_rounded)
+            return (y_pred_rounded, y_pred)
+
+    random_forest.train()
+
+    with st.sidebar:
+        choose = option_menu("Main Menu",
+                             ["Home", "About", "Quiz Based Test", "Sentiment Based Test", "Predict Emotion",
+                              "Report", "References", "Contact",
+                              "Logout"],
+                             icons=['house', 'nut', 'kanban', 'kanban', 'kanban', 'kanban',
+                                    'search check', 'mailbox'],
+                             menu_icon="app-indicator", default_index=0,
+                             )
+
+    def read_markdown_file(markdown_file):
+        return Path(markdown_file).read_text()
+
+    if choose == "Home":
+        st.title("Home")
+        st.markdown("---")
+        image = Image.open('./img/home.png')
+        st.image(image, use_column_width="auto")
+        intro_markdown = read_markdown_file("./doc/home.md")
+        st.markdown(intro_markdown, unsafe_allow_html=True)
+
+    elif choose == "About":
+        st.title("About Project")
+        st.markdown("---")
+        image = Image.open('./img/brain.png')
+        st.image(image, use_column_width="auto")
+        intro_markdown = read_markdown_file("./doc/about.md")
+        st.markdown(intro_markdown, unsafe_allow_html=True)
+
+    # prediction of quiz based test
+    elif choose == "Quiz Based Test":
+        st.title("Test Yourselves")
+        st.markdown("---")
+        envsatInput = st.radio(
+            "No interest or pleasure in doing things",
+            ('No', 'Yes'))
+        possatInput = st.radio(
+            "Feeling bad about yourself - or that you are a failure or have let yourself or your family down",
+            ('No', 'Yes'))
+        finstrInput = st.radio(
+            "Feeling down, depressed, or hopeless",
+            ('No', 'Yes'))
+        insomInput = st.radio(
+            "Trouble falling or staying asleep, or sleeping too much",
+            ('No', 'Yes'))
+        anxInput = st.radio(
+            "Have you ever thought of harming yourself",
+            ('No', 'Yes'))
+        depriInput = st.radio(
+            "Do feelings of anxiety or discomfort around others bother you",
+            ('No', 'Yes'))
+        abuseInput = st.radio(
+            "Are you abused by someone you know?",
+            ('No', 'Yes'))
+        cheatInput = st.radio(
+            "Trouble concentrating on things, such as reading the newspaper or watching television",
+            ('No', 'Yes'))
+        threatInput = st.radio(
+            "Threatened",
+            ('No', 'Yes'))
+        suicInput = st.radio(
+            "Thoughts that you would be better of dead, or of hurting yourself",
+            ('No', 'Yes'))
+        inferInput = st.radio(
+            "Have you recently faced any big Financial loss?",
+            ('No', 'Yes'))
+        confInput = st.radio(
+            "Do you feel helpless?",
+            ('No', 'Yes'))
+        lossInput = st.radio(
+            "Did you recent lose someone?",
+            ('No', 'Yes'))
+
+        envsat = 1 if envsatInput == 'Yes' else 0
+        possat = 1 if possatInput == 'Yes' else 0
+        finstr = 1 if finstrInput == 'Yes' else 0
+        insom = 1 if insomInput == 'Yes' else 0
+        anx = 1 if anxInput == 'Yes' else 0
+        depri = 1 if depriInput == 'Yes' else 0
+        abuse = 1 if abuseInput == 'Yes' else 0
+        cheat = 1 if cheatInput == 'Yes' else 0
+        threat = 1 if threatInput == 'Yes' else 0
+        suic = 1 if suicInput == 'Yes' else 0
+        infer = 1 if inferInput == 'Yes' else 0
+        conf = 1 if confInput == 'Yes' else 0
+        loss = 1 if lossInput == 'Yes' else 0
+
+        arglist = envsat, possat, finstr, insom, anx, depri, abuse, cheat, threat, suic, infer, conf, loss
+        arglist = np.array(arglist).reshape(1, -1)
+        # print(arglist)
+        pred = random_forest.predict(arglist)
+        print(pred[0])
+        if st.button("Predict results"):
+            if pred[0] == 1:
+                saveRecord("Test Data : " + "High probability of depression", pos=0)
+                saveResult("Test Data : " + "High probability of depression", pos=0)
+                st.error("High probability of depression")
+            elif pred[0] == 0:
+                saveRecord("Test Data : " + "Low probability of depression", pos=0)
+                saveResult("Test Data : " + "Low probability of depression", pos=0)
+                st.success("Low probability of depression")
+        print(pred[1] * 100)
+
+
+    elif choose == "Sentiment Based Test":
+        st.title("Sentiment Based Test")
+        st.markdown("---")
+        st.header("Answer this question")
+        intro_markdown = Path("./doc/question-text.md").read_text()
+        st.markdown(intro_markdown, unsafe_allow_html=True)
+        text = st.text_input("Please enter your answer")
+        if st.button("Predict results"):
+            res = predict(text)
+            saveRecord("Sentiment Based Test : " + ''.join(res), pos=1)
+            saveResult("Sentiment Based Test : " + ''.join(res), pos=1)
+            st.success(res)
+        # download_file(MODEL_URL, MODEL_LOCAL_PATH, expected_size=188915987)
+        # download_file(LANG_MODEL_URL, LANG_MODEL_LOCAL_PATH, expected_size=953363776)
+        # app_sst_with_video(
+        #         str(MODEL_LOCAL_PATH), str(LANG_MODEL_LOCAL_PATH), lm_alpha, lm_beta, beam
+        #     )
+
+    elif choose == "Predict Emotion":
+        st.title("Predict Emotion")
+        st.markdown("---")
+        startEmotionDetector()
+
+    elif choose == "Report":
+        # st.title("Report")
+        # st.markdown("---")
+        # with open('result.txt', 'r') as file:
+        #     file_data = file.readlines()
+        #     st.write(file_data)
+        report.main()
+
+    elif choose == "References":
+        st.header("Checkout These References To Know More About Depression")
+        st.markdown("---")
+
+        url1 = "https://www.mayoclinic.org/diseases-conditions/depression/diagnosis-treatment/drc-20356013"
+        url2 = "https://www.nimh.nih.gov/health/publications/depression"
+        url3 = "https://www.helpguide.org/articles/depression/depression-treatment.htm"
+        url4 = "https://www.webmd.com/depression/features/natural-treatments"
+
+        st.markdown("[Mayo Clinic](%s)" % url1)
+        st.markdown("[National Institute Of mental health](%s)" % url2)
+        st.markdown("[HelpGuide](%s)" % url3)
+        st.markdown("[WebMD](%s)" % url4)
+
+    elif choose == "Contact":
+        st.title("Contact Us")
+        st.markdown("---")
+        with st.form(key='columns_in_form2', clear_on_submit=True):
+            Name = st.text_input(label='Please Enter Your Name')  # Collect user feedback
+            Email = st.text_input(label='Please Enter Email')  # Collect user feedback
+            Message = st.text_input(label='Please Enter Your Message')  # Collect user feedback
+            message = f"""\
+Subject: Email from {Email}
+{Message}
+"""
+            submitted = st.form_submit_button('Submit')
+            print(submitted)
+            if submitted:
+                send_email(message)
+                st.write(
+                    'Thanks for your contacting us. '
+                    'We will respond to your questions or inquiries as soon as possible!')
+        title_container = st.container()
+        col1, col2, col3 = st.columns([4, 4, 4])
+        with title_container:
+            with col1:
+                st.markdown("Contact", unsafe_allow_html=True)
+                st.markdown("+919090909090", unsafe_allow_html=True)
+            with col2:
+                st.markdown("Email", unsafe_allow_html=True)
+                st.markdown("depression@gmail.com", unsafe_allow_html=True)
+            with col3:
+                st.markdown("Website", unsafe_allow_html=True)
+                st.markdown("www.depressionprediction.com", unsafe_allow_html=True)
+
+    elif choose == "Logout":
+        st.session_state['loggedin'] = None
+        st.text("Are you sure you want to logout?")
+        url = '/'
+        st.markdown(f'''
+        <a href={url} target="_self"><button style="background-color:GreenYellow;border:0px;border-radius:25px;
+        height:40px;width:100px">Logout</button></a>
+        ''',
+                    unsafe_allow_html=True)
